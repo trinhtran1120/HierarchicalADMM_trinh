@@ -184,6 +184,7 @@ function hybridADMM(
     max_iter = max_iter,
     inner_max_iter = max_iter,
     verbose = false,
+    on_iteration = nothing,
 )
     if root.children === nothing
         error("hybridADMM requires a root with at least one child module")
@@ -253,6 +254,11 @@ function hybridADMM(
         err = Float64[]
         get_err!(root, dict_result, err)
         push!(traj_err, sum(err))
+
+        on_iteration === nothing || on_iteration((;
+            iteration, stopping_residual = max_residual,
+            inner_iterations = inner_count_this_iter,
+        ))
 
         if mode == 1
             if abs((opt_value - current_cost)/opt_value) < opt_gap

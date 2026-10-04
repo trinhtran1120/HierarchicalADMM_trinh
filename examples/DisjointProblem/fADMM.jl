@@ -94,7 +94,7 @@ end
 
 
 
-function flattenADMM(root::linknode; tol = tol, λ = λₛ, max_iter = max_iter, verbose = false)
+function flattenADMM(root::linknode; tol = tol, λ = λₛ, max_iter = max_iter, verbose = false, on_iteration = nothing)
 
     # Flatten the tree structure into a list of nodes
     dict_prime_child = Dict()
@@ -157,6 +157,11 @@ function flattenADMM(root::linknode; tol = tol, λ = λₛ, max_iter = max_iter,
         assign_node!(root, dict_prime_child)
         current_cost = total_cost(root)
         push!(opt_value_fADMM, current_cost)
+
+        on_iteration === nothing || on_iteration((;
+            iteration, stopping_residual = max_residual, z = root_x0,
+            targets = flatten_tree, w = dict_prime_child, blocks = dict_prime_root,
+        ))
 
         if mode == 1
             if abs((opt_value - current_cost)/opt_value) < opt_gap

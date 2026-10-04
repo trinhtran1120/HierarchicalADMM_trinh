@@ -1,0 +1,6 @@
+hybridMixed is reported separately in scalar_hybridMixed.csv against its scalar reference.
+nodes=16 levels=5 K=1000 repeats=1 seed=0 lambda_h=0.0012 lambda_global=0.0015
+Fixed M123 physical topology; comparison penalties are specified explicitly in main.jl.
+fADMM residual is star consensus; its physical edge-dual error is unavailable (NaN).
+Objective uses each method's actual node variables; gaps are signed and unsmoothed.
+Legacy communication counters measure sent scalars only; no message counts are inferred.

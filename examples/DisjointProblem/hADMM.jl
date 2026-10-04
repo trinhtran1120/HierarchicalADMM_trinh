@@ -105,7 +105,7 @@ function hierarchicalADMM!(node::linknode, ter::Vector{Float64})
 end
 
 
-function hADMM(root::linknode, dict_result::Dict; tol = tol, λ = λₕ, max_iter = max_iter,  verbose = false)
+function hADMM(root::linknode, dict_result::Dict; tol = tol, λ = λₕ, max_iter = max_iter,  verbose = false, on_iteration = nothing)
     global stop_arr
     
     traj_err = Float64[]
@@ -122,6 +122,8 @@ function hADMM(root::linknode, dict_result::Dict; tol = tol, λ = λₕ, max_ite
         get_err!(root, dict_result, err)
         push!(traj_res, maximum(ter))
         push!(traj_err, sum(err))
+
+        on_iteration === nothing || on_iteration((; iteration, stopping_residual = maximum(ter)))
 
         if mode == 1
             if abs((opt_value - current_cost)/opt_value) < opt_gap
