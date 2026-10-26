@@ -185,6 +185,7 @@ function hybridADMM(
     inner_max_iter = max_iter,
     verbose = false,
     on_iteration = nothing,
+    mode = mode,
 )
     if root.children === nothing
         error("hybridADMM requires a root with at least one child module")
@@ -218,6 +219,8 @@ function hybridADMM(
 
         max_residual = 0.0
         inner_count_this_iter = 0
+        module_inner_iterations = Int[]
+        inner_residuals = Float64[]
 
         for child in root.children
             top_query = root.prime[child.ID] + root.dual[child.ID]
@@ -242,6 +245,8 @@ function hybridADMM(
 
             max_residual = max(max_residual, norm(prime_res, Inf), norm(dual_res, Inf), inner_residual)
             inner_count_this_iter += inner_count
+            push!(module_inner_iterations, inner_count)
+            push!(inner_residuals, inner_residual)
         end
 
         module_prime_old = deepcopy(module_prime)
@@ -258,6 +263,7 @@ function hybridADMM(
         on_iteration === nothing || on_iteration((;
             iteration, stopping_residual = max_residual,
             inner_iterations = inner_count_this_iter,
+            module_inner_iterations, inner_residuals,
         ))
 
         if mode == 1

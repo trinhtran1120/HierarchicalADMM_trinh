@@ -8,9 +8,10 @@ julia --project=. examples/DisjointProblem/hybrid_ADMM/main.jl --all
 julia --project=. examples/DisjointProblem/hybrid_ADMM/runtests.jl
 ```
 
-The first command compares the centralized solver, standalone physical-tree
-hADMM, and one mixed hybrid configuration on the same fixed problem. `--all`
-compares the central and hADMM baselines with all 16 global/module assignments.
+The first command compares the centralized solver, standalone hADMM and fADMM,
+the provided nested hybrid, and one mixed Candidate B configuration on the same
+fixed problem. `--all` compares these four baselines with all 16 Candidate B
+global/module assignments.
 A budget-limited run reports `converged=false`.
 The tests check the formulation, centralized models, exact-block reference,
 individual module solvers, all assignments, and physical relay accounting.
@@ -27,7 +28,7 @@ config = SolverConfig(
     rho = 1000.0,
     inner_rho = 1000.0,
     tol = 1e-4,
-    inner_tol = 1e-6,
+    inner_tol = 1e-4,
     max_iter = 1000,
     inner_max_iter = 1000,
     record_messages = false,
@@ -57,8 +58,8 @@ reference is a single solution without an ADMM trajectory.
 | `relative_solution_error` | Stacked solution error in 2-norm divided by `max(1,norm(reference))` |
 | `physical` | Maximum infinity norm of all original physical-edge constraint residuals |
 | `primal`, `dual` | Each method's ADMM stopping residuals; central N/A |
-| `iterations` | Ipopt barrier iterations, hADMM full-tree sweeps, or hybrid outer iterations, as indicated by `iteration_kind` |
-| `inner_sweeps` | Sum of hybrid inner sweeps over all modules and outer iterations |
+| `iterations` | Ipopt barrier iterations, hADMM full-tree sweeps, fADMM flattened iterations, or hybrid outer iterations, as indicated by `iteration_kind` |
+| `inner_sweeps` | Sum of Candidate B or nested hybrid inner sweeps over their modules and outer iterations |
 | `TotalNodeUpdates`, `MaxNodeUpdates` | Total/maximum per-node proximal updates, including hybrid inner iterations; central N/A |
 | `TotalVals`, `MaxNodeVals` | Total/maximum per-node scalar transmissions, including physical relays and stopping reports |
 | `seconds` | Sequential wall time after a separate full warm-up of each solver |
@@ -78,7 +79,33 @@ for the reference. Standalone hADMM calls the existing `hierarchicalADMM!` with
 It counts one subtree stopping scalar on each child-to-parent response, matching
 the local hybrid hADMM accounting.
 
-Ipopt iterations, whole-tree sweeps, and hybrid outer iterations represent
+Standalone fADMM calls the existing `flattenADMM` with `lambda=1/rho`, residual
+stopping (`mode=3`), and zero initial scaled duals. Its root coordinates every
+non-root physical node, routing queries and responses along the original tree.
+Its decisions are collected from the callback's root vector and non-root copies,
+so metrics use the actual flattened iterates rather than the legacy display
+dictionaries that stitch together child copies. The root already has the data
+needed to compute stopping residuals, so no extra stopping payload is sent.
+
+`Nested hybrid F:H/H` calls `hybridADMM` from
+[`../../hybrid_nested_admm/hybrid_ADMM.jl`](../../hybrid_nested_admm/hybrid_ADMM.jl).
+It uses global fADMM and local hADMM on two complete child subtrees rooted at
+`(2,1)` and `(2,2)`, containing 4 and 11 nodes. Candidate B uses its prescribed
+three modules of sizes 4, 7, and 4. These methods solve the same physical problem
+with different partitions. The nested method uses the same penalties, outer and
+inner tolerances, budgets, initialization, and warm-up policy as Candidate B.
+Its `config` argument supplies these numerical settings; its solver assignment
+is fixed to global fADMM and local hADMM.
+
+The nested source repeats its outer target transmission on every module inner
+sweep. The benchmark retains and counts those transmissions. Its adapter adds
+one subtree stopping scalar per inner return edge and three module-report
+scalars per outer response, matching Candidate B's counted report payloads.
+These metadata counts do not change the optimization updates. The source's new
+optional `mode` keyword allows explicit residual stopping; callback reports
+also expose per-module inner iterations and residuals.
+
+Ipopt iterations, whole-tree sweeps, flattened iterations, and hybrid outer iterations represent
 different work; use node updates and communications alongside them. Node updates
 count proximal solves rather than PANOC's internal numerical steps. Central
 communication is zero during optimization with problem data already resident;
@@ -112,7 +139,9 @@ their standalone behavior unchanged. It uses:
   The local hierarchical driver follows its preorder primal and return-time
   edge-dual update schedule.
 - `fADMM.jl`: physical path/block-position helpers and `update_leaf_flat` for
-  flattened module non-root updates.
+  flattened module non-root updates, plus `flattenADMM` for the standalone
+  baseline. Its optional `mode` and `dual_init` keywords retain the existing
+  defaults for other examples.
 
 The random tree generator is replaced by exactly the fixed tree in `guide.md`.
 Physical nodes use `(depth,index)` keys; legacy numeric IDs are assigned in that

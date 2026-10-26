@@ -10,6 +10,7 @@ include("../TreeGeneration.jl")
 include("../CentralSolution.jl")
 include("../hADMM.jl")
 include("../fADMM.jl")
+include("../../hybrid_nested_admm/hybrid_ADMM.jl")
 
 export build_problem, SolverConfig, solve_hybrid, centralized_original,
        centralized_reformulation, formulation_residuals, feasible_decisions, solve_oracle
@@ -212,7 +213,7 @@ Base.@kwdef struct SolverConfig
     rho::Float64 = 1000.0
     inner_rho::Float64 = 1000.0
     tol::Float64 = 1e-4
-    inner_tol::Float64 = 1e-6
+    inner_tol::Float64 = 1e-4
     max_iter::Int = 1000
     inner_max_iter::Int = 1000
     record_messages::Bool = false

@@ -67,7 +67,10 @@ const H = HybridADMM
                 @test report.residual <= cfg.inner_tol
                 @test maximum(H.maxnorm(state.x[v]-oracle.x[v]) for v in m.vertices) < 1e-5
                 @test H.maxnorm(m.D*H.stack(m,state.x)) < 1e-6
-                J = sum(H.cost(p.nodes[v],state.x[v]) for v in m.vertices) +
+                # Compare feasible objectives: loose inner stopping leaves small
+                # internal inconsistencies that can shift the raw objective.
+                feasible_x = Dict(v => state.x[first(m.vertices)][m.blocks[v]] for v in m.vertices)
+                J = sum(H.cost(p.nodes[v],feasible_x[v]) for v in m.vertices) +
                     cfg.rho/2*sum(abs2,state.x[first(m.vertices)]-target)
                 @test isapprox(J,oracle.objective;rtol=1e-8)
             end
@@ -135,11 +138,11 @@ const H = HybridADMM
         @test_throws ArgumentError solve_hybrid(p;config=SolverConfig(inner_max_iter=0))
     end
 
-    @testset "Central, standalone hADMM, and hybrid comparison" begin
+    @testset "Central, hADMM/fADMM, nested hybrid, and Candidate B comparison" begin
         cfg = SolverConfig(module_algorithms=(:hADMM,:fADMM,:hADMM))
         report = compare_solvers(p;configs=[cfg],warmup=false)
-        central, hierarchical, hybrid = report.rows
-        @test length(report.rows) == 3
+        central, hierarchical, flattened, nested, hybrid = report.rows
+        @test length(report.rows) == 5
         @test central.objective == H.objective(p,report.reference.x)
         @test central.iterations > 0
         @test central.iteration_kind == :Ipopt
@@ -147,7 +150,7 @@ const H = HybridADMM
         @test central.feasible_gap < 1e-14
         @test central.TotalVals == central.MaxNodeVals == 0
         @test ismissing(central.TotalNodeUpdates)
-        for row in (hierarchical,hybrid)
+        for row in (hierarchical,flattened,nested,hybrid)
             @test row.converged
             @test row.objective_gap < 1e-7
             @test row.feasible_gap < 1e-7
@@ -161,8 +164,37 @@ const H = HybridADMM
         @test hierarchical.MaxNodeUpdates == hierarchical.iterations
         @test hierarchical.TotalVals == hierarchical.iterations*(2*sum(length(e.c) for e in p.edges)+length(p.edges))
         @test hybrid.TotalNodeUpdates == hybrid.iterations +
-              sum(sum(h.inner_iterations .* length.(getfield.(p.modules,:vertices))) for h in report.runs[2].result.history)
-        @test hybrid.inner_sweeps == sum(sum(h.inner_iterations) for h in report.runs[2].result.history)
+              sum(sum(h.inner_iterations .* length.(getfield.(p.modules,:vertices))) for h in report.runs[4].result.history)
+        @test hybrid.inner_sweeps == sum(sum(h.inner_iterations) for h in report.runs[4].result.history)
+        @test flattened.iteration_kind == :flat_ADMM
+        @test flattened.TotalNodeUpdates == length(p.nodes)*flattened.iterations
+        @test flattened.MaxNodeUpdates == flattened.iterations
+        @test flattened.TotalVals == flattened.iterations*sum(2*(v[1]-1)*n.nV for (v,n) in p.nodes)
+        @test flattened.TotalVals == sum(values(report.runs[2].result.node_values))
+        @test flattened.MaxNodeVals == maximum(values(report.runs[2].result.node_values))
+        @test !solve_flattened(p;max_iter=1).converged
+        @test_throws ArgumentError solve_flattened(p;rho=0.0)
+        nested_result = report.runs[3].result
+        @test nested.iteration_kind == :nested_ADMM
+        @test nested_result.module_roots == [(2,1),(2,2)]
+        @test nested_result.module_sizes == [4,11]
+        @test all(all(h.inner_converged) for h in nested_result.history)
+        @test nested.inner_sweeps == sum(sum(h.inner_iterations) for h in nested_result.history)
+        @test nested.TotalNodeUpdates == nested.iterations +
+              sum(sum(h.inner_iterations .* [4,11]) for h in nested_result.history)
+        @test nested.TotalVals == sum(values(nested_result.node_values))
+        @test nested.MaxNodeVals == maximum(values(nested_result.node_values))
+        expected_nested = 0
+        for h in nested_result.history, (i,r) in enumerate(nested_result.module_roots)
+            nodes_in_module = [v for v in keys(p.nodes) if
+                first(p.blocks[r]) <= first(p.blocks[v]) && last(p.blocks[v]) <= last(p.blocks[r]) && v[1] >= r[1]]
+            internal = [e for e in p.edges if e.parent in nodes_in_module && e.child in nodes_in_module]
+            per_sweep = p.nodes[r].nV + sum(2*length(e.c)+1 for e in internal)
+            expected_nested += h.inner_iterations[i]*per_sweep + p.nodes[r].nV + 3
+        end
+        @test nested.TotalVals == expected_nested
+        @test !solve_nested_hybrid(p;config=SolverConfig(max_iter=1,inner_max_iter=1)).converged
+        @test_throws ArgumentError solve_nested_hybrid(p;config=SolverConfig(inner_rho=0.0))
         @test all(h.solution_error >= 0 for run in report.runs for h in run.result.history)
         @test last(report.runs[1].result.history).TotalVals == hierarchical.TotalVals
         # A nondefault penalty exercises propagation through every legacy sweep.
@@ -175,9 +207,9 @@ const H = HybridADMM
         @test_throws ArgumentError compare_solvers(p;configs=[cfg,SolverConfig(rho=500.0)])
         mktempdir() do dir
             save_comparison(report,dir)
-            @test length(readlines(joinpath(dir,"summary.csv"))) == 4
-            @test length(readlines(joinpath(dir,"history.csv"))) == 1+hierarchical.iterations+hybrid.iterations
-            @test length(readlines(joinpath(dir,"solutions.csv"))) == 1+3*sum(n.nV for n in values(p.nodes))
+            @test length(readlines(joinpath(dir,"summary.csv"))) == 6
+            @test length(readlines(joinpath(dir,"history.csv"))) == 1+hierarchical.iterations+flattened.iterations+nested.iterations+hybrid.iterations
+            @test length(readlines(joinpath(dir,"solutions.csv"))) == 1+5*sum(n.nV for n in values(p.nodes))
             @test occursin("relative_solution_error",first(readlines(joinpath(dir,"summary.csv"))))
         end
     end

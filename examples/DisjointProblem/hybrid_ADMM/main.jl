@@ -16,7 +16,7 @@ function main(; all_combinations="--all" in ARGS,
     print_comparison(report)
     save_comparison(report,output_dir)
     plot_comparison(report,output_dir)
-    println("Tables, solutions, and plots saved to ", output_dir)
+    println("Centralized, hADMM, fADMM, nested hybrid, and Candidate B results saved to ", output_dir)
     println("Global fADMM/hADMM use equivalent updates on this two-level star.")
     return report
 end

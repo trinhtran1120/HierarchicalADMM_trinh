@@ -94,7 +94,7 @@ end
 
 
 
-function flattenADMM(root::linknode; tol = tol, λ = λₛ, max_iter = max_iter, verbose = false, on_iteration = nothing)
+function flattenADMM(root::linknode; tol = tol, λ = λₛ, max_iter = max_iter, verbose = false, on_iteration = nothing, mode = mode, dual_init = 1.0)
 
     # Flatten the tree structure into a list of nodes
     dict_prime_child = Dict()
@@ -113,7 +113,7 @@ function flattenADMM(root::linknode; tol = tol, λ = λₛ, max_iter = max_iter,
     for (key, value) in flatten_tree
         dict_prime_root[key]  = ones(value.nV)
         dict_prime_child[key] = ones(value.nV)
-        dict_dual[key]        = ones(value.nV)
+        dict_dual[key]        = fill(Float64(dual_init), value.nV)
         pos                  = get_postion(path[key])
         index[key]           = pos:(pos + value.nV - 1)
     end
