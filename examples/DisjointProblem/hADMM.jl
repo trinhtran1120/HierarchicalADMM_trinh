@@ -76,23 +76,23 @@ function proxAlg!(node::linknode; λ = λₕ)
 end
 
 
-function hierarchicalADMM!(node::linknode, ter::Vector{Float64})
+function hierarchicalADMM!(node::linknode, ter::Vector{Float64}; λ = λₕ)
 
     node.iteration += 1
     
     #Update prime
-    proxAlg!(node)
+    proxAlg!(node; λ = λ)
 
     if node.children !== nothing
         for child in node.children
             
             child_prime_old  = vect_prime(child)
-            hierarchicalADMM!(child, ter)
+            hierarchicalADMM!(child, ter; λ = λ)
 
             #Update dual
             child_prime = vect_prime(child)
             prime_res = node.prime[child.ID] - child_prime
-            dual_res  = (child_prime  -  child_prime_old)/λₕ
+            dual_res  = (child_prime  -  child_prime_old)/λ
             node.dual[child.ID] += prime_res
 
             # Child sent its prime var to node
@@ -116,7 +116,7 @@ function hADMM(root::linknode, dict_result::Dict; tol = tol, λ = λₕ, max_ite
         ter = Float64[]
         current_cost = total_cost(root)
         push!(opt_value_hADMM, current_cost)
-        hierarchicalADMM!(root, ter)
+        hierarchicalADMM!(root, ter; λ = λ)
 
         err = Float64[]
         get_err!(root, dict_result, err)
